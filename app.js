@@ -13,6 +13,7 @@ app.use((req, res, next) => {
     next()
 })
 
+// ROUTES
 app.use('/feed', feedRoutes)
 
 app.listen(8080)
