@@ -3,7 +3,7 @@ const { validationResult } = require("express-validator");
 const { hash, compare } = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
-exports.signup = (req, res, next) => {
+exports.signup = async (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     const error = new Error("Validation failed");
@@ -14,61 +14,55 @@ exports.signup = (req, res, next) => {
 
   const { email, password, name } = req.body;
 
-  hash(password, 12)
-    .then((hashedPassword) => {
-      const user = new User({ email, password: hashedPassword, name });
-      return user.save();
-    })
-    .then((result) => {
-      return res
-        .status(201)
-        .json({ message: "User Created", userId: result._id });
-    })
-    .catch((e) => {
-      if (!e.statusCode) {
-        e.statusCode = 500;
-      }
-      next(e);
-    });
+  const hashedPassword = await hash(password, 12);
+  try {
+    const user = new User({ email, password: hashedPassword, name });
+    const result = await user.save();
+
+    return res
+      .status(201)
+      .json({ message: "User Created", userId: result._id });
+  } catch (e) {
+    if (!e.statusCode) {
+      e.statusCode = 500;
+    }
+    next(e);
+  }
 };
 
-exports.login = (req, res, next) => {
+exports.login = async (req, res, next) => {
   const { email, password } = req.body;
-  let loadedUser;
+  try {
+    const user = await User.findOne({ email: email });
 
-  User.findOne({ email: email })
-    .then((user) => {
-      if (!user) {
-        const error = new Error("Wrong email or password");
-        error.statusCode = 401;
-        throw error;
-      }
-      loadedUser = user;
-      return compare(password, user.password);
-    })
-    .then((isEqual) => {
-      console.log("isEqual", isEqual);
-      if (!isEqual) {
-        const error = new Error("Wrong email or password");
-        error.statusCode = 401;
-        throw error;
-      }
-      // Generate de JWToken
-      const token = jwt.sign(
-        {
-          email: loadedUser.email,
-          userId: loadedUser._id.toString(),
-        },
-        process.env.PRIVATE_KEY,
-        { expiresIn: "1h" }
-      );
+    if (!user) {
+      const error = new Error("Wrong email or password");
+      error.statusCode = 401;
+      throw error;
+    }
 
-      return res.status(200).json({ token, userId: loadedUser._id.toString() });
-    })
-    .catch((e) => {
-      if (!e.statusCode) {
-        e.statusCode = 500;
-      }
-      next(e);
-    });
+    const isEqual = await compare(password, user.password);
+
+    if (!isEqual) {
+      const error = new Error("Wrong email or password");
+      error.statusCode = 401;
+      throw error;
+    }
+    // Generate de JWToken
+    const token = jwt.sign(
+      {
+        email: user.email,
+        userId: user._id.toString(),
+      },
+      process.env.PRIVATE_KEY,
+      { expiresIn: "1h" }
+    );
+
+    return res.status(200).json({ token, userId: user._id.toString() });
+  } catch (e) {
+    if (!e.statusCode) {
+      e.statusCode = 500;
+    }
+    next(e);
+  }
 };
