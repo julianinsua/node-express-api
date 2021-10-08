@@ -2,11 +2,24 @@ const fs = require("fs");
 const path = require("path");
 const { validationResult } = require("express-validator");
 const Post = require("../models/Post");
+const User = require("../models/User");
 
 exports.getPosts = (req, res, next) => {
+  const { page } = req.query || 1;
+  const perPage = 2;
+  let totalItems;
   Post.find()
+    .count()
+    .then((count) => {
+      totalItems = count;
+      return Post.find()
+        .skip((page - 1) * perPage)
+        .limit(perPage);
+    })
     .then((posts) => {
-      res.status(200).json({ message: "fetched posts successfully.", posts });
+      res
+        .status(200)
+        .json({ message: "Fetched Posts successfully.", posts, totalItems });
     })
     .catch((e) => {
       if (!e.statusCode) {
@@ -33,20 +46,30 @@ exports.createPost = (req, res, next) => {
 
   const imageUrl = req.file.path;
   const { title, content } = req.body;
-
+  let creator;
   const post = new Post({
     title,
     content,
     imageUrl,
-    creator: { name: "pepito" },
+    creator: req.userId,
   });
 
   post
     .save()
     .then((result) => {
+      return User.findById(req.userId);
+    })
+    .then((user) => {
+      creator = user;
+      user.posts.push(post);
+      return user.save();
+    })
+    .then((result) => {
+      console.log(creator.name);
       return res.status(201).json({
         message: "post created successfully",
-        post: result,
+        post: post,
+        creator: { _id: creator._id, name: creator.name },
       });
     })
     .catch((e) => {
@@ -107,6 +130,11 @@ exports.updatePost = (req, res, next) => {
         error.statusCode = 404;
         throw error;
       }
+      if (post.creator.toString() !== req.userId) {
+        const error = new Error("Not authorized");
+        error.statusCode = 403;
+        throw error;
+      }
 
       if (imageUrl !== post.imageUrl) {
         clearImage(post.imageUrl);
@@ -122,6 +150,45 @@ exports.updatePost = (req, res, next) => {
       res.status(200).json({ message: "Post updated", post: result });
     })
     .catch((e) => {
+      if (!e.statusCode) {
+        e.statusCode = 500;
+      }
+      next(e);
+    });
+};
+
+exports.deletePost = (req, res, next) => {
+  const { postId } = req.params;
+  Post.findById(postId)
+    .then((post) => {
+      if (!post) {
+        const error = new Error("Couldn't find post");
+        error.statusCode = 404;
+        throw error;
+      }
+
+      if (post.creator.toString() !== req.userId) {
+        const error = new Error("Not authorized");
+        error.statusCode = 403;
+        throw error;
+      }
+
+      // Check Logged in user
+      clearImage(post.imageUrl);
+      return Post.findByIdAndRemove(postId);
+    })
+    .then((result) => {
+      return User.findById(req.userId);
+    })
+    .then((user) => {
+      user.posts.pull(postId);
+      return user.save();
+    })
+    .then(() => {
+      res.status(200).json({ message: "Deleted Post." });
+    })
+    .catch((e) => {
+      console.log(e);
       if (!e.statusCode) {
         e.statusCode = 500;
       }
