@@ -1,5 +1,7 @@
 const path = require("path");
 const express = require("express");
+const { createServer } = require("http");
+const { init } = require("./socket");
 const bodyParser = require("body-parser");
 const multer = require("multer");
 const { diskStorage } = require("multer");
@@ -7,9 +9,16 @@ const mongoose = require("mongoose");
 const feedRoutes = require("./src/routes/feedRoutes");
 const authRoutes = require("./src/routes/authRoutes");
 const dotenv = require("dotenv");
-dotenv.config();
 
+dotenv.config();
 const app = express();
+const httpServer = createServer(app);
+// this is the part that should go into a different file and export io
+const io = init(httpServer);
+
+io.on("connection", (socket) => {
+  console.log("Client connected");
+});
 
 // PARSERS
 const fileStorage = diskStorage({
@@ -46,6 +55,7 @@ app.use((req, res, next) => {
     "GET, POST, PUT, PATCH, DELETE"
   );
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.header("Access-Control-Allow-Origin", "http://localhost:3000");
   next();
 });
 
@@ -62,6 +72,6 @@ app.use((error, req, res, next) => {
 mongoose
   .connect(process.env.API_URL)
   .then((result) => {
-    app.listen(8080);
+    httpServer.listen(8080);
   })
   .catch((e) => console.log(e));
