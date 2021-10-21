@@ -64,5 +64,7 @@ exports.login = async (req, res, next) => {
       e.statusCode = 500;
     }
     next(e);
+
+    return e;
   }
 };
